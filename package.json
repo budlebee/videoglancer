@@ -1,0 +1,14 @@
+{
+  "name": "pptr-glancer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "budlebee",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer": "^10.0.0"
+  }
+}
