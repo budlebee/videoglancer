@@ -3,10 +3,18 @@
 const puppeteer = require("puppeteer-extra");
 const { jsPDF } = require("jspdf"); // will automatically load the node version
 
+const AWS = require("aws-sdk");
+const fs = require("fs");
 // Add adblocker plugin, which will transparently block ads in all pages you
 // create using puppeteer.
 const AdblockerPlugin = require("puppeteer-extra-plugin-adblocker");
 puppeteer.use(AdblockerPlugin());
+
+AWS.config.loadFromPath(__dirname + "/config/awsconfig.json");
+const s3 = new AWS.S3();
+const bucketName = "glancer-results";
+
+//AWS.config.update({ region: "ap-northeast-2" });
 
 (async () => {
   let start = new Date();
@@ -19,9 +27,9 @@ puppeteer.use(AdblockerPlugin());
     await page.setViewport({ width: 1920, height: 1080 });
 
     // 1시간 30분짜리 영상
-    await page.goto(`https://www.youtube.com/watch?v=o3ka5fYysBM&t=5s`, {
-      waitUntil: "networkidle2",
-    });
+    //await page.goto(`https://www.youtube.com/watch?v=o3ka5fYysBM&t=5s`, {
+    //  waitUntil: "networkidle2",
+    //});
 
     // 34분짜리 영상
     //await page.goto(`https://www.youtube.com/watch?v=OrxmtDw4pVI&t=5s`, {
@@ -34,9 +42,9 @@ puppeteer.use(AdblockerPlugin());
     //});
 
     // 오렌지 짜는 11분짜리 영상.
-    //await page.goto(`https://www.youtube.com/watch?v=I8M3GjGxRNA&t=5s`, {
-    //  waitUntil: "networkidle2",
-    //});
+    await page.goto(`https://www.youtube.com/watch?v=I8M3GjGxRNA&t=5s`, {
+      waitUntil: "networkidle2",
+    });
 
     // 테스트
     //await page.goto(`${event.url}&t=5`, {
@@ -166,33 +174,41 @@ puppeteer.use(AdblockerPlugin());
         console.log("플레잉 모드인거 재생멈춤 하는데서 에러발생");
       }
 
-      // take screenshot
-      // screenshot 대신 canvas 로 그려서 base64 문자열을 리턴할까. s3 이용하기 싫은데.
-      // 아래 canvas 이용하는 방식은 자막이 안찍히네.
-      // 자막도 따로 get 해서 json 에 집어넣어야겠는걸.
-
       await page.waitForSelector(".buffering-mode", { hidden: true });
+      // take screenshot
+      // there are two options.
+      // 1. no auto-generated caption. slightly fast and light weight. It is default.
+      // 2. with auto-generated caption. It is not clear; it contains some youtube underbars.
+
+      // opt 1
+      //captureData.push(
+      //  await page.evaluate((video) => {
+      //    var scale = 1;
+      //    var canvas = document.createElement("canvas");
+      //    canvas.width = video.videoWidth * scale;
+      //    canvas.height = video.videoHeight * scale;
+      //    figWidth = video.videoWidth * scale;
+      //    figHeight = video.videoHeight * scale;
+      //    canvas
+      //      .getContext("2d")
+      //      .drawImage(video, 0, 0, canvas.width, canvas.height);
+      //    return canvas.toDataURL("image/jpeg", 0.8);
+      //  }, videoEle)
+      //);
+
+      // opt 2
       captureData.push(
-        await page.evaluate((video) => {
-          var scale = 1;
-          var canvas = document.createElement("canvas");
-          canvas.width = video.videoWidth * scale;
-          canvas.height = video.videoHeight * scale;
-          figWidth = video.videoWidth * scale;
-          figHeight = video.videoHeight * scale;
-          canvas
-            .getContext("2d")
-            .drawImage(video, 0, 0, canvas.width, canvas.height);
-          return canvas.toDataURL("image/jpeg", 0.8);
-        }, videoEle)
+        await videoEle.screenshot({
+          type: "jpeg",
+          encoding: "base64",
+        })
       );
 
       //await videoEle.screenshot({
-      //  path: `results/${i}_${Date.now()}.jpeg`,
+      //  //path: `results/${i}_${Date.now()}.jpeg`,
       //  type: "jpeg",
+      // encoding: "base64"
       //});
-
-      //const buffer = await videoEle.screenshot()
 
       // move to next time
       await page.keyboard.press("l");
@@ -219,23 +235,10 @@ puppeteer.use(AdblockerPlugin());
       }
     }
 
-    // all done. close browser.
-    //for (let j = 0; j < captureData.length; j++) {
-    //  fs.writeFile(
-    //    `${Date.now()}.png`,
-    //    captureData[j],
-    //    "base64",
-    //    function (err) {
-    //      console.log(err);
-    //    }
-    //  );
-    //}
-
     await browser.close();
 
-    console.log("Width: ", figWidth, ", ", "Height: ", figHeight);
+    // make pdf file
     const doc = new jsPDF("l", "pt", [figWidth, figHeight]);
-
     for (let i = 0; i < captureData.length; i++) {
       doc.addImage(captureData[i], "JPEG", 0, 0, figWidth, figHeight); //이미지 그리기
       if (i == captureData.length - 1) {
@@ -244,11 +247,45 @@ puppeteer.use(AdblockerPlugin());
       }
     }
 
-    doc.save(`glancer-${Date.now()}.pdf`); //결과 출력
+    // save it locally
+    doc.save(`glancer-${Date.now()}.pdf`);
+
+    // save it in s3
+    // s3 upload functions except buffer or string, not arraybuffer.
+    // jspdf supports arraybuffer output. but not buffet.
+    // so I use Buffer.from(arraybuffer). It convert arraybuffer to buffer.
+    const output = Buffer.from(doc.output("arraybuffer"));
+
+    //await s3
+    //  .putObject({
+    //    Bucket: bucketName,
+    //    Key: `glancer-${Date.now()}.pdf`,
+    //    Body: output,
+    //    ContentType: "application/pdf",
+    //  })
+    //  .promise();
+    //
+    await s3
+      .upload(
+        {
+          Bucket: bucketName,
+          Key: `glancer-${Date.now()}.pdf`,
+          Body: output,
+        },
+        function (err, data) {
+          if (err) {
+            return console.log(
+              "There was an error uploading your pdf: ",
+              err.message
+            );
+          }
+        }
+      )
+      .promise();
 
     let end = new Date();
     console.log("소요시간(ms): ", end - start);
-    return captureData;
+    return;
   } catch (e) {
     console.log(e);
   }

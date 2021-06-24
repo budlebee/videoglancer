@@ -9,6 +9,7 @@
   "author": "budlebee",
   "license": "ISC",
   "dependencies": {
+    "aws-sdk": "^2.933.0",
     "jspdf": "^2.3.1",
     "puppeteer": "^10.0.0",
     "puppeteer-extra": "^3.1.18",
