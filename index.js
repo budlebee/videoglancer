@@ -1,7 +1,15 @@
-const puppeteer = require("puppeteer");
-const fs = require("fs");
+//const chromium = require("chrome-aws-lambda");
+//const puppeteer = require("puppeteer");
+const puppeteer = require("puppeteer-extra");
+const { jsPDF } = require("jspdf"); // will automatically load the node version
+
+// Add adblocker plugin, which will transparently block ads in all pages you
+// create using puppeteer.
+const AdblockerPlugin = require("puppeteer-extra-plugin-adblocker");
+puppeteer.use(AdblockerPlugin());
 
 (async () => {
+  let start = new Date();
   const captureData = [];
   try {
     const browser = await puppeteer.launch({ headless: true });
@@ -14,24 +22,24 @@ const fs = require("fs");
     //});
 
     // 34분짜리 영상
-    //await page.goto(`https://www.youtube.com/watch?v=OrxmtDw4pVI&t=5s`, {
-    //  waitUntil: "networkidle2",
-    //});
+    await page.goto(`https://www.youtube.com/watch?v=OrxmtDw4pVI&t=5s`, {
+      waitUntil: "networkidle2",
+    });
 
     // 1분 미만 영상
     //await page.goto(`https://www.youtube.com/watch?v=lg2zZRLQU1A&t=${5}s`, {
     //  waitUntil: "networkidle2",
     //});
 
-    // 즉석 테스트
+    // 즉석 테스트. 오렌지 짜는 11분짜리 영상.
     //await page.goto(`https://www.youtube.com/watch?v=I8M3GjGxRNA&t=5s`, {
     //  waitUntil: "networkidle2",
     //});
 
     // 테스트
-    await page.goto("https://www.youtube.com/watch?v=AUQRyl1SNcU&t=5", {
-      waitUntil: "networkidle2",
-    });
+    //await page.goto(`${event.url}&t=5`, {
+    //  waitUntil: "networkidle2",
+    //});
 
     // get video component
     await page.waitForSelector(".html5-main-video");
@@ -40,6 +48,24 @@ const fs = require("fs");
     if ((await page.$(".paused-mode")) !== null) {
       await page.keyboard.press("k");
       await page.waitForTimeout(200);
+    }
+
+    // ad skip
+    try {
+      while ((await page.$(".ad-showing")) !== null) {
+        await page.waitForSelector(".buffering-mode", { hidden: true });
+        if ((await page.$(".paused-mode")) !== null) {
+          await page.keyboard.press("k");
+        }
+        await page.waitForTimeout(6000);
+        //await page.waitForSelector(".ytp-ad-skip-button");
+        if ((await page.$(".ytp-ad-skip-button")) !== null) {
+          const skipButton = await page.$(".ytp-ad-skip-button");
+          await skipButton.click();
+        }
+      }
+    } catch (e) {
+      console.log("광고 스킵하는 부분에서 에러발생");
     }
 
     // get video length
@@ -152,6 +178,8 @@ const fs = require("fs");
       //  type: "jpeg",
       //});
 
+      //const buffer = await videoEle.screenshot()
+
       // move to next time
       await page.keyboard.press("l");
       await page.keyboard.press("l");
@@ -191,9 +219,29 @@ const fs = require("fs");
 
     //fs.writeFile("out.txt", captureData[0], (err) => {});
     //console.log(captureData[captureData.length - 1]);
+
     await browser.close();
+
+    const doc = await new jsPDF();
+    var width = doc.internal.pageSize.width;
+    var height = doc.internal.pageSize.height;
+    await doc.addImage(captureData[0], "JPEG", 0, 0, width, height); //이미지 그리기
+    await doc.addPage("a4");
+    await doc.movePage(2);
+    //await doc.addImage(captureData[1], "JPEG", 0, 500, 500, 500); //이미지 그리기
+    await doc.addPage("a4");
+    await doc.movePage(3);
+    // await doc.addImage(captureData[2], "JPEG", 0, 1000, 500, 500); //이미지 그리기
+    await doc.addPage("a4");
+
+    doc.save("web.pdf"); //결과 출력
+
+    let end = new Date();
+    console.log(end - start);
     return captureData;
   } catch (e) {
     console.log(e);
   }
 })();
+
+//handler({ url: "https://www.youtube.com/watch?v=I8M3GjGxRNA" });
