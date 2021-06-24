@@ -11,27 +11,29 @@ puppeteer.use(AdblockerPlugin());
 (async () => {
   let start = new Date();
   const captureData = [];
+  let figWidth;
+  let figHeight;
   try {
     const browser = await puppeteer.launch({ headless: true });
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
 
     // 1시간 30분짜리 영상
-    //await page.goto(`https://www.youtube.com/watch?v=o3ka5fYysBM&t=5s`, {
-    //  waitUntil: "networkidle2",
-    //});
-
-    // 34분짜리 영상
-    await page.goto(`https://www.youtube.com/watch?v=OrxmtDw4pVI&t=5s`, {
+    await page.goto(`https://www.youtube.com/watch?v=o3ka5fYysBM&t=5s`, {
       waitUntil: "networkidle2",
     });
+
+    // 34분짜리 영상
+    //await page.goto(`https://www.youtube.com/watch?v=OrxmtDw4pVI&t=5s`, {
+    //  waitUntil: "networkidle2",
+    //});
 
     // 1분 미만 영상
     //await page.goto(`https://www.youtube.com/watch?v=lg2zZRLQU1A&t=${5}s`, {
     //  waitUntil: "networkidle2",
     //});
 
-    // 즉석 테스트. 오렌지 짜는 11분짜리 영상.
+    // 오렌지 짜는 11분짜리 영상.
     //await page.goto(`https://www.youtube.com/watch?v=I8M3GjGxRNA&t=5s`, {
     //  waitUntil: "networkidle2",
     //});
@@ -44,6 +46,16 @@ puppeteer.use(AdblockerPlugin());
     // get video component
     await page.waitForSelector(".html5-main-video");
     const videoEle = await page.$(".html5-main-video");
+
+    // get video size
+    figWidth = await page.evaluate((video) => {
+      // 여기 내부에서 실행되는건 브라우저상에서 실행되는거라, node 상으로 반영 안된다.
+      return video.videoWidth;
+    }, videoEle);
+
+    figHeight = await page.evaluate((video) => {
+      return video.videoHeight;
+    }, videoEle);
 
     if ((await page.$(".paused-mode")) !== null) {
       await page.keyboard.press("k");
@@ -166,10 +178,12 @@ puppeteer.use(AdblockerPlugin());
           var canvas = document.createElement("canvas");
           canvas.width = video.videoWidth * scale;
           canvas.height = video.videoHeight * scale;
+          figWidth = video.videoWidth * scale;
+          figHeight = video.videoHeight * scale;
           canvas
             .getContext("2d")
             .drawImage(video, 0, 0, canvas.width, canvas.height);
-          return canvas.toDataURL("image/jpeg", 0.5);
+          return canvas.toDataURL("image/jpeg", 0.8);
         }, videoEle)
       );
 
@@ -187,7 +201,7 @@ puppeteer.use(AdblockerPlugin());
       await page.keyboard.press("l");
       await page.keyboard.press("l");
       await page.keyboard.press("l");
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(100);
       await page.waitForSelector(".buffering-mode", { hidden: true });
       try {
         await page.waitForFunction(
@@ -217,31 +231,25 @@ puppeteer.use(AdblockerPlugin());
     //  );
     //}
 
-    //fs.writeFile("out.txt", captureData[0], (err) => {});
-    //console.log(captureData[captureData.length - 1]);
-
     await browser.close();
 
-    const doc = await new jsPDF();
-    var width = doc.internal.pageSize.width;
-    var height = doc.internal.pageSize.height;
-    await doc.addImage(captureData[0], "JPEG", 0, 0, width, height); //이미지 그리기
-    await doc.addPage("a4");
-    await doc.movePage(2);
-    //await doc.addImage(captureData[1], "JPEG", 0, 500, 500, 500); //이미지 그리기
-    await doc.addPage("a4");
-    await doc.movePage(3);
-    // await doc.addImage(captureData[2], "JPEG", 0, 1000, 500, 500); //이미지 그리기
-    await doc.addPage("a4");
+    console.log("Width: ", figWidth, ", ", "Height: ", figHeight);
+    const doc = new jsPDF("l", "pt", [figWidth, figHeight]);
 
-    doc.save("web.pdf"); //결과 출력
+    for (let i = 0; i < captureData.length; i++) {
+      doc.addImage(captureData[i], "JPEG", 0, 0, figWidth, figHeight); //이미지 그리기
+      if (i == captureData.length - 1) {
+      } else {
+        doc.addPage();
+      }
+    }
+
+    doc.save(`glancer-${Date.now()}.pdf`); //결과 출력
 
     let end = new Date();
-    console.log(end - start);
+    console.log("소요시간(ms): ", end - start);
     return captureData;
   } catch (e) {
     console.log(e);
   }
 })();
-
-//handler({ url: "https://www.youtube.com/watch?v=I8M3GjGxRNA" });
