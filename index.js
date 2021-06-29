@@ -1,24 +1,11 @@
-//const chromium = require("chrome-aws-lambda");
-//const puppeteer = require("puppeteer");
-const puppeteer = require("puppeteer-extra");
+const puppeteer = require("puppeteer");
 const { jsPDF } = require("jspdf"); // will automatically load the node version
 
-const AWS = require("aws-sdk");
-const fs = require("fs");
-// Add adblocker plugin, which will transparently block ads in all pages you
-// create using puppeteer.
-const AdblockerPlugin = require("puppeteer-extra-plugin-adblocker");
-puppeteer.use(AdblockerPlugin());
-
-AWS.config.loadFromPath(__dirname + "/config/awsconfig.json");
-const s3 = new AWS.S3();
-const bucketName = "glancer-results";
-
-//AWS.config.update({ region: "ap-northeast-2" });
+const youtubeURL = "https://www.youtube.com/watch?v=ipRvjS7q1DI";
 
 (async () => {
-  let start = new Date();
   const captureData = [];
+  let start = new Date();
   let figWidth;
   let figHeight;
   try {
@@ -26,30 +13,9 @@ const bucketName = "glancer-results";
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 });
 
-    // 1시간 30분짜리 영상
-    //await page.goto(`https://www.youtube.com/watch?v=o3ka5fYysBM&t=5s`, {
-    //  waitUntil: "networkidle2",
-    //});
-
-    // 34분짜리 영상
-    //await page.goto(`https://www.youtube.com/watch?v=OrxmtDw4pVI&t=5s`, {
-    //  waitUntil: "networkidle2",
-    //});
-
-    // 1분 미만 영상
-    //await page.goto(`https://www.youtube.com/watch?v=lg2zZRLQU1A&t=${5}s`, {
-    //  waitUntil: "networkidle2",
-    //});
-
-    // 오렌지 짜는 11분짜리 영상.
-    await page.goto(`https://www.youtube.com/watch?v=I8M3GjGxRNA&t=5s`, {
+    await page.goto(`${youtubeURL}&t=5`, {
       waitUntil: "networkidle2",
     });
-
-    // 테스트
-    //await page.goto(`${event.url}&t=5`, {
-    //  waitUntil: "networkidle2",
-    //});
 
     // get video component
     await page.waitForSelector(".html5-main-video");
@@ -78,7 +44,6 @@ const bucketName = "glancer-results";
           await page.keyboard.press("k");
         }
         await page.waitForTimeout(6000);
-        //await page.waitForSelector(".ytp-ad-skip-button");
         if ((await page.$(".ytp-ad-skip-button")) !== null) {
           const skipButton = await page.$(".ytp-ad-skip-button");
           await skipButton.click();
@@ -100,7 +65,7 @@ const bucketName = "glancer-results";
       console.log(lenArray);
     } else if (lenArray.length == 2) {
       console.log("under 1 hour video");
-      videoLength = lenArray[0];
+      videoLength = parseInt(lenArray[0], 10);
     } else if (lenArray.length == 3) {
       console.log("over 1 hour video");
       videoLength = parseInt(lenArray[0], 10) * 60 + parseInt(lenArray[1], 10);
@@ -118,13 +83,8 @@ const bucketName = "glancer-results";
       await captionBtn.click();
     }
 
-    // full screep 버튼이 안눌린다..왜지.
-    //const fullscreenBtn = await page.$(".ytp-fullscreen-button");
-    //
-    //await fullscreenBtn.click();
-
     // start screenshot
-    for (let i = 0; i < videoLength; i++) {
+    for (let i = 0; i < videoLength + 1; i++) {
       await page.waitForSelector(".buffering-mode", { hidden: true });
 
       try {
@@ -143,7 +103,6 @@ const bucketName = "glancer-results";
             await page.keyboard.press("k");
           }
           await page.waitForTimeout(6000);
-          //await page.waitForSelector(".ytp-ad-skip-button");
           if ((await page.$(".ytp-ad-skip-button")) !== null) {
             const skipButton = await page.$(".ytp-ad-skip-button");
             await skipButton.click();
@@ -175,6 +134,7 @@ const bucketName = "glancer-results";
       }
 
       await page.waitForSelector(".buffering-mode", { hidden: true });
+
       // take screenshot
       // there are two options.
       // 1. no auto-generated caption. slightly fast and light weight. It is default.
@@ -204,6 +164,7 @@ const bucketName = "glancer-results";
         })
       );
 
+      // if you want to single screenshots, use .screenshot method.
       //await videoEle.screenshot({
       //  //path: `results/${i}_${Date.now()}.jpeg`,
       //  type: "jpeg",
@@ -254,8 +215,8 @@ const bucketName = "glancer-results";
     // s3 upload functions except buffer or string, not arraybuffer.
     // jspdf supports arraybuffer output. but not buffet.
     // so I use Buffer.from(arraybuffer). It convert arraybuffer to buffer.
-    const output = Buffer.from(doc.output("arraybuffer"));
 
+    //const output = Buffer.from(doc.output("arraybuffer"));
     //await s3
     //  .putObject({
     //    Bucket: bucketName,
@@ -264,27 +225,41 @@ const bucketName = "glancer-results";
     //    ContentType: "application/pdf",
     //  })
     //  .promise();
-    //
-    await s3
-      .upload(
-        {
-          Bucket: bucketName,
-          Key: `glancer-${Date.now()}.pdf`,
-          Body: output,
-        },
-        function (err, data) {
-          if (err) {
-            return console.log(
-              "There was an error uploading your pdf: ",
-              err.message
-            );
-          }
-        }
-      )
-      .promise();
+    //const uniqKey = `glancer-${Date.now()}.pdf`;
+    //await s3
+    //  .upload(
+    //    {
+    //      Bucket: bucketName,
+    //      Key: uniqKey,
+    //      Body: output,
+    //    },
+    //    function (err, data) {
+    //      if (err) {
+    //        return console.log(
+    //          "There was an error uploading your pdf: ",
+    //          err.message
+    //        );
+    //      }
+    //    }
+    //  )
+    //  .promise();
+    //const fileURL = s3.getSignedUrl(
+    //  "getObject",
+    //  {
+    //    Bucket: bucketName,
+    //    Key: uniqKey,
+    //  },
+    //  (err, url) => {
+    //    if (err) {
+    //      throw err;
+    //    }
+    //    console.log(url);
+    //  }
+    //);
 
     let end = new Date();
     console.log("소요시간(ms): ", end - start);
+
     return;
   } catch (e) {
     console.log(e);
